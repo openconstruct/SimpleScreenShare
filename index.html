@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimplsScreenShare (SSS) </title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 900px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #007bff; }
+        .controls, .videos { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"] { width: calc(100% - 24px); padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .button-group { margin-bottom: 10px; }
+        button {
+            padding: 10px 15px;
+            margin-right: 10px;
+            margin-bottom: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        #localVideo, .remoteVideo {
+            width: 100%;
+            max-width: 400px;
+            min-height: 225px;
+            border: 1px solid #ccc;
+            background-color: #222;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: block;
+        }
+        #remoteVideosContainer { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; }
+        .remoteVideoContainer {
+            border: 1px solid #eee;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            width: calc(50% - 20px);
+            max-width: 400px;
+            box-sizing: border-box;
+            position: relative;
+        }
+        .remoteVideoContainer p { margin: 0 0 5px 0; font-size: 0.9em; color: #555; }
+        .maximize-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            padding: 5px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 3px;
+            z-index: 10;
+        }
+        .maximize-btn:hover {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+        #status { margin-top: 15px; padding: 10px; background-color: #e9ecef; border-radius: 4px; font-size: 0.9em; min-height: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simple Screen Share</h1>
+        
+        <div class="controls">
+            <label for="roomIdInput">Room Code:</label>
+            <input type="text" id="roomIdInput" placeholder="Enter or Generate a Room Code">
+            <div class="button-group">
+                <button id="generateRoomIdBtn">Generate New Room Code</button>
+                <button id="joinRoomBtn">Join Room</button>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="startShareBtn" disabled>Start Sharing Screen</button>
+            <button id="stopShareBtn" disabled>Stop Sharing Screen</button>
+        </div>
+
+        <div id="status">Enter or generate a Room Code, then click "Join Room".</div>
+
+        <div class="videos">
+            <h2>My Screen (Preview)</h2>
+            <video id="localVideo" autoplay playsinline muted></video>
+
+            <h2>Remote Screens</h2>
+            <div id="remoteVideosContainer"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { joinRoom, selfId as localGeneratedPeerId } from './trystero-torrent.min.js';
+
+        const wordList = [ 
+            "able", "acid", "also", "area", "army", "away", "baby", "back", "ball", "band",
+            "bank", "base", "bath", "bean", "bear", "beat", "bell", "best", "bird", "blow",
+            "blue", "boat", "body", "bomb", "bond", "bone", "book", "boss", "bowl", "busy",
+            "cake", "call", "calm", "came", "camp", "card", "care", "case", "cash", "cast",
+            "cats", "cell", "chat", "chip", "city", "club", "coal", "coat", "code", "cold",
+            "come", "cook", "cool", "cope", "copy", "core", "cost", "crew", "crop", "dark",
+            "data", "date", "deal", "dear", "debt", "deep", "deer", "desk", "dice", "diet",
+            "disc", "disk", "does", "done", "door", "dose", "down", "draw", "dream", "dress",
+            "drink", "drive", "drop", "drug", "drum", "duck", "duke", "dust", "duty", "each",
+            "earn", "east", "easy", "edge", "else", "even", "ever", "face", "fact", "fail",
+            "fair", "fall", "farm", "fast", "fate", "fear", "feed", "feel", "feet", "fell",
+            "felt", "file", "fill", "film", "find", "fine", "fire", "firm", "fish", "five",
+            "flag", "flat", "flee", "flow", "food", "foot", "ford", "form", "fort", "four",
+            "free", "frog", "from", "fuel", "full", "fund", "gain", "game", "gang", "gate",
+            "gave", "gear", "gene", "gift", "girl", "give", "glad", "glass", "glow", "goal",
+            "goes", "gold", "golf", "gone", "good", "gray", "grew", "grey", "grow", "gulf",
+            "hair", "half", "hall", "hand", "hang", "hard", "harm", "hate", "have", "head",
+            "hear", "heat", "held", "hell", "help", "here", "hero", "high", "hill", "hint",
+            "hire", "hold", "hole", "holy", "home", "hope", "host", "hour", "huge", "hung",
+            "hunt", "hurt", "idea", "idle", "iron", "item", "jack", "jane", "jazz", "jean",
+            "john", "join", "joke", "jump", "june", "jury", "just", "keen", "keep", "kent",
+            "kept", "keys", "kick", "kill", "kind", "king", "knee", "knew", "know", "lack",
+            "lady", "laid", "lake", "lamp", "land", "lane", "last", "late", "lead", "leaf",
+            "lean", "left", "lend", "less", "life", "lift", "like", "line", "link", "list",
+            "live", "load", "loan", "lock", "logo", "long", "look", "lord", "lose", "loss",
+            "lost", "loud", "love", "luck", "lung", "made", "mail", "main", "make", "male",
+            "many", "maps", "mark", "mass", "meal", "mean", "meat", "meet", "menu", "mere",
+            "mike", "mile", "milk", "mill", "mind", "mine", "miss", "mode", "mood", "moon",
+            "more", "most", "move", "much", "must", "myth", "nail", "name", "navy", "near",
+            "neck", "need", "news", "next", "nice", "nick", "nine", "none", "nose", "note",
+            "nova", "nuts", "oath", "obey", "odds", "oils", "okay", "once", "only", "onto",
+            "open", "oral", "ouch", "ours", "oval", "oven", "over", "pace", "pack", "page",
+            "paid", "pain", "pair", "palm", "park", "part", "pass", "past", "path", "peak",
+            "pick", "pile", "pill", "pine", "pink", "pipe", "plan", "play", "plot", "plug",
+            "plus", "poem", "poet", "pole", "poll", "pond", "pool", "poor", "pope", "port",
+            "post", "pour", "pray", "prev", "prey", "pros", "pull", "pump", "pure", "push",
+            "race", "rack", "rage", "rain", "rank", "rare", "rate", "read", "real", "rely",
+            "rent", "rest", "rice", "rich", "ride", "ring", "rise", "risk", "road", "rock",
+            "role", "roll", "roof", "room", "root", "rope", "rose", "ruby", "rude", "rule",
+            "rush", "rust", "safe", "said", "sake", "sale", "salt", "same", "sand", "save",
+            "says", "scan", "scar", "seal", "seat", "seed", "seek", "seem", "seen", "self",
+            "sell", "send", "sense", "sent", "sept", "sets", "sick", "side", "sign", "silk",
+            "sing", "sink", "site", "size", "skin", "skip", "sky", "slim", "slow", "snow",
+            "soap", "soft", "soil", "sold", "sole", "some", "song", "soon", "sort", "soul",
+            "soup", "spin", "spot", "star", "stay", "step", "stop", "such", "suit", "sure",
+            "swim", "sync", "taco", "tail", "take", "tale", "talk", "tall", "tank", "tape",
+            "task", "taxi", "team", "tear", "tech", "tell", "temp", "tend", "term", "test",
+            "text", "than", "that", "them", "then", "they", "thin", "this", "thus", "tide",
+            "tidy", "tile", "time", "tiny", "tips", "tire", "toad", "toes", "toll", "tone",
+            "tons", "tool", "tops", "tore", "torn", "tour", "town", "toys", "trap", "tree",
+            "trek", "trim", "trip", "true", "tryp", "tube", "tuna", "tune", "turn", "twin",
+            "type", "ugly", "undo", "unit", "upon", "used", "user", "uses", "vain", "vary",
+            "vast", "very", "vest", "vibe", "view", "visa", "void", "volt", "vote", "wage",
+            "wait", "wake", "walk", "wall", "want", "ward", "warm", "warn", "wash", "wave",
+            "ways", "weak", "wear", "week", "well", "went", "were", "west", "what", "when",
+            "whip", "whiz", "whoa", "wide", "wife", "wild", "will", "wind", "wine", "wing",
+            "wipe", "wire", "wise", "wish", "with", "wolf", "wood", "wool", "word", "wore",
+            "work", "worm", "worn", "wrap", "yard", "yeah", "year", "yell", "yoga", "your",
+            "yule", "zaps", "zero", "zest", "zinc", "zips", "zone", "zoom"
+        ]; 
+
+        const roomIdInput = document.getElementById('roomIdInput');
+        const generateRoomIdBtn = document.getElementById('generateRoomIdBtn');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const startShareBtn = document.getElementById('startShareBtn');
+        const stopShareBtn = document.getElementById('stopShareBtn');
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideosContainer = document.getElementById('remoteVideosContainer');
+        const statusDiv = document.getElementById('status');
+
+
+        let roomApi;
+        let localStream;
+        
+
+        function logStatus(message) {
+            console.log(message);
+            if (statusDiv) statusDiv.textContent = message;
+        }
+
+        function generateMemorableRoomCode() {
+            const selectedWords = [];
+            for (let i = 0; i < 4; i++) {
+                const randomIndex = Math.floor(Math.random() * wordList.length);
+                selectedWords.push(wordList[randomIndex]);
+            }
+            return selectedWords.join('-'); 
+        }
+
+        function displayRemoteStream(stream, peerId) {
+            logStatus(`Receiving MediaStream from Peer: ${peerId.substring(0, 8)}...`);
+            if (!(stream instanceof MediaStream)) {
+                console.error("displayRemoteStream called with non-MediaStream object:", stream);
+                logStatus(`Error: Received invalid stream data from ${peerId.substring(0,8)}.`);
+                return;
+            }
+
+            let videoContainer = document.getElementById(`container-${peerId}`);
+            let remoteVideo = document.getElementById(`video-${peerId}`);
+
+            if (!videoContainer) {
+                videoContainer = document.createElement('div');
+                videoContainer.id = `container-${peerId}`;
+                videoContainer.classList.add('remoteVideoContainer');
+                
+                const peerInfo = document.createElement('p');
+                peerInfo.textContent = `From: ${peerId.substring(0, 8)}...`;
+                videoContainer.appendChild(peerInfo);
+
+                remoteVideo = document.createElement('video');
+                remoteVideo.id = `video-${peerId}`;
+                remoteVideo.autoplay = true;
+                remoteVideo.playsinline = true;
+                remoteVideo.classList.add('remoteVideo');
+                videoContainer.appendChild(remoteVideo);
+
+                const maximizeBtn = document.createElement('button');
+                maximizeBtn.textContent = 'Maximize';
+                maximizeBtn.classList.add('maximize-btn');
+                maximizeBtn.onclick = () => {
+                    if (remoteVideo.requestFullscreen) {
+                        remoteVideo.requestFullscreen();
+                    } else if (remoteVideo.mozRequestFullScreen) {
+                        remoteVideo.mozRequestFullScreen();
+                    } else if (remoteVideo.webkitRequestFullscreen) {
+                        remoteVideo.webkitRequestFullscreen();
+                    } else if (remoteVideo.msRequestFullscreen) {
+                        remoteVideo.msRequestFullscreen();
+                    }
+                };
+                videoContainer.appendChild(maximizeBtn);
+                
+                remoteVideosContainer.appendChild(videoContainer);
+            }
+            remoteVideo.srcObject = stream;
+            stream.getVideoTracks().forEach(track => {
+                track.onended = () => {
+                    logStatus(`Screen share from ${peerId.substring(0,8)}... track ended.`);
+                    if (remoteVideo) remoteVideo.srcObject = null;
+                };
+            });
+        }
+        
+        generateRoomIdBtn.addEventListener('click', () => {
+            roomIdInput.value = generateMemorableRoomCode();
+            logStatus(`Generated Room Code: ${roomIdInput.value}. Copy and share, then click 'Join Room'.`);
+        });
+
+        joinRoomBtn.addEventListener('click', async () => {
+            const roomId = roomIdInput.value.trim();
+            if (!roomId) {
+                logStatus("Please enter or generate a Room Code."); return;
+            }
+            const sanitizedRoomId = roomId.toLowerCase().replace(/[\s,]+/g, '-');
+            if (roomId !== sanitizedRoomId) {
+                logStatus(`Using sanitized Room Code: ${sanitizedRoomId}`);
+                roomIdInput.value = sanitizedRoomId;
+            }
+
+
+            logStatus(`Attempting to connect to Room: ${sanitizedRoomId}... (My ID: ${localGeneratedPeerId.substring(0,8)}...)`);
+            joinRoomBtn.disabled = true;
+            roomIdInput.disabled = true;
+            generateRoomIdBtn.disabled = true;
+
+            try {
+                if (roomApi) {
+                    await roomApi.leave();
+                    remoteVideosContainer.innerHTML = ''; 
+                    roomApi = null;
+                }
+
+                const config = {
+                    appId: 'my-screenshare-app-memorable-v1', 
+                    config: { 
+                        torrent: {
+                            trackerUrls: [
+                                'wss://tracker.openwebtorrent.com',
+                                'wss://tracker.btorrent.xyz',
+                                'wss://tracker.webtorrent.io'
+                            ]
+                        }
+                    }
+                };
+
+                logStatus(`Joining room: ${sanitizedRoomId}...`);
+                roomApi = await joinRoom(config, sanitizedRoomId); 
+
+                if (!roomApi || typeof roomApi.onPeerStream !== 'function') {
+                    throw new Error("joinRoom did not return a valid API object with onPeerStream.");
+                }
+                logStatus(`Joined room: ${sanitizedRoomId}. API object obtained.`);
+
+                roomApi.onPeerJoin(joinedPeerId => {
+                    logStatus(`Peer ${joinedPeerId.substring(0,8)}... joined.`);
+                });
+                roomApi.onPeerLeave(leftPeerId => {
+                    logStatus(`Peer ${leftPeerId.substring(0,8)}... left.`);
+                    const el = document.getElementById(`container-${leftPeerId}`);
+                    if (el) el.remove();
+                });
+
+                roomApi.onPeerStream((stream, peerId, metadata) => { 
+                    logStatus(`onPeerStream from ${peerId.substring(0,8)}. Metadata: ${JSON.stringify(metadata)}`);
+                    displayRemoteStream(stream, peerId);
+                });
+                
+                startShareBtn.disabled = false;
+                stopShareBtn.disabled = true; 
+
+            } catch (error) {
+                console.error("Error during room join or Trystero setup:", error);
+                logStatus(`Error: ${error.message}.`);
+                joinRoomBtn.disabled = false;
+                roomIdInput.disabled = false;
+                generateRoomIdBtn.disabled = false;
+                startShareBtn.disabled = true;
+                stopShareBtn.disabled = true;
+                if (roomApi && typeof roomApi.leave === 'function') {
+                    try { await roomApi.leave(); } catch (e) {  }
+                }
+                roomApi = null;
+            }
+        });
+
+        startShareBtn.addEventListener('click', async () => {
+            if (!roomApi) {
+                logStatus("Not ready. Join a room first."); return;
+            }
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                    logStatus("Error: Screen sharing not supported."); return;
+                }
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" }, audio: true });
+                localVideo.srcObject = localStream;
+
+                if (roomApi.addStream) {
+                    await roomApi.addStream(localStream); 
+                    logStatus("Local stream added. Broadcasting screen via WebRTC.");
+                } else {
+                     logStatus("Warning: roomApi.addStream not found. Stream might not send.");
+                }
+                
+                startShareBtn.disabled = true;
+                stopShareBtn.disabled = false;
+                localStream.getVideoTracks()[0].onended = () => stopSharing();
+            } catch (err) {
+                console.error("Error starting screen share:", err);
+                logStatus(`Error starting share: ${err.name === 'NotAllowedError' ? 'Permission denied.' : err.message}`);
+                if (localStream) { 
+                    localStream.getTracks().forEach(track => track.stop());
+                    localStream = null;
+                    localVideo.srcObject = null;
+                }
+                if (roomApi) {
+                    startShareBtn.disabled = false;
+                    stopShareBtn.disabled = true;
+                }
+            }
+        });
+        
+        function stopSharing() {
+            if (localStream) {
+                if (roomApi && roomApi.removeStream) {
+                    roomApi.removeStream(localStream);
+                    logStatus("Local stream removed.");
+                }
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            localVideo.srcObject = null;
+            localStream = null;
+            if (roomApi) { 
+                startShareBtn.disabled = false;
+                stopShareBtn.disabled = true;
+                logStatus("Screen sharing stopped.");
+            } else {
+                startShareBtn.disabled = true;
+                stopShareBtn.disabled = true;
+                logStatus("Screen sharing stopped. Not in room.");
+            }
+        }
+        stopShareBtn.addEventListener('click', stopSharing);
+
+        window.addEventListener('beforeunload', async () => {
+            if (localStream) localStream.getTracks().forEach(track => track.stop());
+            if (roomApi && typeof roomApi.leave === 'function') {
+                try { await roomApi.leave(); } catch (e) { console.warn("Error leaving room on beforeunload:", e); }
+            }
+        });
+
+        if (typeof crypto === 'undefined' || typeof crypto.randomUUID === 'undefined') {
+            const currentStatusText = statusDiv ? statusDiv.textContent : "";
+            logStatus(currentStatusText + " (Note: crypto.randomUUID not available, using words.)");
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            startShareBtn.disabled = true; 
+            const currentStatusText = statusDiv ? statusDiv.textContent : "";
+            logStatus(currentStatusText + " (Screen Share disabled)");
+        }
+
+    </script>
+</body>
+</html>
